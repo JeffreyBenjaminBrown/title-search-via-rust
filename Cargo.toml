@@ -1,0 +1,12 @@
+[package]
+name = "search_via_tantivy"
+edition = "2021"
+version = "0.1.0"
+
+[dependencies]
+walkdir = "2"
+regex = "1.11.1"
+
+[[bin]] # more bin sections can be added
+name = "main"
+path = "main.rs"
