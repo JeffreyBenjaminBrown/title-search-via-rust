@@ -1,0 +1,2 @@
+#+title: This includes a link to a file about [[idblabla][bears]].
+This line will be ignored.
