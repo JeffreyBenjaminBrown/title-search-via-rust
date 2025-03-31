@@ -1,0 +1,5 @@
+* incremental updating
+  I'd like to be able to persist the index,
+  and update it incrementally.
+  That is, reindex only files that
+  have changed since the last (re)indexing.
