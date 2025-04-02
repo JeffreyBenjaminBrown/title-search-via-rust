@@ -5,6 +5,24 @@ use walkdir::WalkDir;
 use regex::Regex;
 use std::fs;
 
+fn empty_temp_index(
+    // Makes an empty index in a temporary directory.
+    schema: schema::Schema,
+    index_name: &str
+) -> Result<Index, Box<dyn std::error::Error>> {
+    let index_path = std::env::temp_dir().join(index_name);
+
+    // TODO | PITFALL:
+    // This deletes any existing data at that path!
+    if index_path.exists() {
+        fs::remove_dir_all(&index_path)?; }
+    fs::create_dir_all(&index_path)?;
+    println!("Creating index in {:?}", index_path);
+    let index = Index::create_in_dir(
+	&index_path, schema.clone())?;
+    Ok(index)
+}
+
 fn build_index(
     index: &Index,
     path_field: schema::Field,
@@ -81,25 +99,20 @@ fn print_search_results(
     Ok (()) }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Define the schema.
+    // Index
     let mut schema_builder = schema::Schema::builder();
     let path_field = schema_builder.add_text_field(
         "path", schema::STRING | schema::STORED);
     let title_field = schema_builder.add_text_field(
         "title", schema::TEXT | schema::STORED);
     let schema = schema_builder.build();
+    let index = // Later, `build_index` populates this.
+	empty_temp_index( schema.clone(),
+			  "tantivy_org_index")?;
+    build_index(
+	&index, path_field, title_field, "data")?;
 
-    // Make an empty index in a temporary directory.
-    // TODO | PITFALL: This deletes any existing data at that path!
-    let index_path = std::env::temp_dir()
-	.join("tantivy_org_index");
-    if index_path.exists() {
-        fs::remove_dir_all(&index_path)?; }
-    fs::create_dir_all(&index_path)?;
-    println!("Creating index in {:?}", index_path);
-    let index = Index::create_in_dir(&index_path, schema.clone())?;
-
-    build_index(&index, path_field, title_field, "data")?;
+    // Search
     let (best_matches, searcher) = search_index(
 	&index, title_field, "test second")?;
     print_search_results( best_matches, &searcher,
