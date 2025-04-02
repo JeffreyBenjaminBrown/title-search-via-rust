@@ -5,6 +5,40 @@ use walkdir::WalkDir;
 use regex::Regex;
 use std::fs;
 
+fn build_index(
+    index: &Index,
+    path_field: schema::Field,
+    title_field: schema::Field,
+    data_dir: &str
+) -> Result<usize, Box<dyn std::error::Error>> {
+    println!("Indexing .org files in the {} directory...",
+	     data_dir);
+    let mut index_writer = index.writer(50_000_000)?;
+    let mut indexed_count = 0;
+    let title_re = Regex::new(
+	r"(?i)^\s*#\+title:\s*(.*)$").unwrap();
+    for entry in WalkDir::new(data_dir)
+	.into_iter().filter_map(Result::ok)
+    { let path = entry.path();
+      if path.extension().map_or( // only process org files
+	  false, |ext| ext == "org")
+      { if let Ok(content) = std::fs::read_to_string(path)
+	{ for line in content.lines()
+	  { if let Some(cap) = title_re.captures(line)
+	    { let title = cap[1].trim();
+              println!("Indexing: {} - {}",
+		       path.display(), title);
+              index_writer.add_document(doc!(
+                  path_field => path.to_string_lossy()
+		      .to_string(),
+                  title_field => title.to_string() ) )?;
+              indexed_count += 1;
+              break; } } } } }
+    println!("Indexed {} files. Committing changes...",
+	     indexed_count);
+    index_writer.commit()?;
+    Ok(indexed_count) }
+
 fn search_index(
     index: &Index,
     title_field: schema::Field,
@@ -22,9 +56,7 @@ fn search_index(
     let query = query_parser.parse_query(query_text)?;
     let best_matches = searcher.search(
         &query, &TopDocs::with_limit(10))?;
-
-    Ok((best_matches, searcher))
-}
+    Ok((best_matches, searcher)) }
 
 fn print_search_results(
     best_matches: Vec< // vector of float-address pairs
@@ -65,43 +97,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::remove_dir_all(&index_path)?; }
     fs::create_dir_all(&index_path)?;
     println!("Creating index in {:?}", index_path);
-    let index = Index::create_in_dir(
-	&index_path, schema.clone())?;
-    let mut index_writer = index.writer(50_000_000)?;
+    let index = Index::create_in_dir(&index_path, schema.clone())?;
 
-    // Fill the index.
-    println!( "Indexing .org files in the data/ directory...");
-    let mut indexed_count = 0;
-    let title_re = Regex::new( // case-insensitive
-	r"(?i)^\s*#\+title:\s*(.*)$").unwrap();
-    for entry in
-	WalkDir::new("data")
-	. into_iter().filter_map(Result::ok)
-    { let path = entry.path();
-      if path.extension().map_or(
-	  false, |ext| ext == "org")
-      { if let Ok(content) =
-	std::fs::read_to_string(path)
-	{ for line in content.lines()
-          { if let Some(cap) = title_re.captures(line)
-            { let title = cap[1].trim();
-              println!("Indexing: {} - {}",
-		       path.display(), title);
-              index_writer.add_document(doc!(
-                  path_field => path.to_string_lossy()
-		      .to_string(),
-                  title_field => title.to_string()
-              ))?;
-              indexed_count += 1;
-              break; } } } } }
-    println!("Indexed {} files. Committing changes...",
-	     indexed_count);
-    index_writer.commit()?;
-
+    build_index(&index, path_field, title_field, "data")?;
     let (best_matches, searcher) = search_index(
 	&index, title_field, "test second")?;
-
     print_search_results( best_matches, &searcher,
 			  path_field, title_field)?;
-
     Ok (()) }
