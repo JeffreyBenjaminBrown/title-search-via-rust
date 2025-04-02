@@ -1,17 +1,39 @@
 use tantivy::collector::TopDocs;
-use tantivy::schema::*;
+use tantivy::schema as schema;
 use tantivy::{Index, doc};
 use walkdir::WalkDir;
 use regex::Regex;
 use std::fs;
 
+fn print_search_results(
+    best_matches: Vec<( f32, // vector of float-address pairs
+		    tantivy::DocAddress)>,
+    searcher: &tantivy::Searcher,
+    path_field: schema::Field,
+    title_field: schema::Field
+) -> Result<(), Box<dyn std::error::Error>> {
+    if best_matches.is_empty() {
+        println!("No matches found.");
+    } else {
+        for (score, doc_address) in best_matches {
+            let retrieved_doc = searcher.doc(doc_address)?;
+            let path_value =
+                retrieved_doc.get_first(path_field)
+                .unwrap().as_text().unwrap();
+            let title_value =
+                retrieved_doc.get_first(title_field)
+                .unwrap().as_text().unwrap();
+            println!("- Score: {:.2} | {} ({})",
+                     score, path_value, title_value); } }
+    Ok (()) }
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Define the schema.
-    let mut schema_builder = Schema::builder();
+    let mut schema_builder = schema::Schema::builder();
     let path_field = schema_builder.add_text_field(
-	"path", STRING | STORED);
+        "path", schema::STRING | schema::STORED);
     let title_field = schema_builder.add_text_field(
-	"title", TEXT | STORED);
+        "title", schema::TEXT | schema::STORED);
     let schema = schema_builder.build();
 
     // Make an empty index in a temporary directory.
@@ -65,21 +87,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	tantivy::query::QueryParser::for_index(
 	&index, vec![title_field]);
     let query = query_parser.parse_query(query_text)?;
-    let top_docs = searcher.search(
+    let best_matches = searcher.search(
 	&query, &TopDocs::with_limit(10))?;
 
-    // Print the results.
-    if top_docs.is_empty()
-    { println!("No matches found."); }
-    else {
-	for (score, doc_address) in top_docs {
-        let retrieved_doc = searcher.doc(doc_address)?;
-        let path_value =
-		retrieved_doc.get_first( path_field )
-		.unwrap().as_text().unwrap();
-            let title_value =
-		retrieved_doc.get_first(title_field)
-		.unwrap().as_text().unwrap();
-            println!("- Score: {:.2} | {} ({})",
-		     score, path_value, title_value); } }
-    Ok ( () ) }
+    print_search_results( best_matches, &searcher,
+			  path_field, title_field)?;
+
+    Ok (()) }
