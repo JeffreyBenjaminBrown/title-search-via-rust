@@ -1,3 +1,4 @@
 git-comment
 /target/
 /Cargo.lock
+/data/index.tantivy/

@@ -4,6 +4,8 @@ use tantivy::{Index, doc};
 use walkdir::WalkDir;
 use regex::Regex;
 use std::fs;
+use std::path::Path;
+use std::time::SystemTime;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Index
@@ -13,11 +15,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let title_field = schema_builder.add_text_field(
         "title", schema::TEXT | schema::STORED);
     let schema = schema_builder.build();
-    let index = // Later, `build_index` populates this.
-	empty_temp_index( schema.clone(),
-			  "tantivy_org_index")?;
-    build_index(
-	&index, path_field, title_field, "data")?;
+
+    // Create or open the index in data/index.tantivy
+    let index_path = "data/index.tantivy";
+    let index = get_or_create_index(schema.clone(), index_path)?;
+
+    // Build/update the index
+    update_index(&index, path_field,
+		 title_field, "data",
+		 Path::new(index_path))?;
 
     // Search
     let (best_matches, searcher) = search_index(
@@ -26,56 +32,97 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			  path_field, title_field)?;
     Ok (()) }
 
-fn empty_temp_index(
-    // Makes an empty index in a temporary directory.
+fn get_or_create_index(
     schema: schema::Schema,
-    index_name: &str
+    index_path: &str
 ) -> Result<Index, Box<dyn std::error::Error>> {
-    let index_path = std::env::temp_dir().join(index_name);
+    let path = Path::new(index_path);
 
-    // TODO | PITFALL:
-    // This deletes any existing data at that path!
-    if index_path.exists() {
-        fs::remove_dir_all(&index_path)?; }
-    fs::create_dir_all(&index_path)?;
-    println!("Creating index in {:?}", index_path);
-    let index = Index::create_in_dir(
-	&index_path, schema.clone())?;
-    Ok(index)
+    if path.exists() {
+        println!("Opening existing index at {:?}", path);
+        Ok(Index::open_in_dir(path)?)
+    } else {
+        println!("Creating new index at {:?}", path);
+        fs::create_dir_all(path)?;
+        Ok(Index::create_in_dir(path, schema)?)
+    }
 }
 
-fn build_index(
+fn get_modification_time(
+    path: &Path)
+    -> Result<SystemTime, Box<dyn std::error::Error>> {
+    let metadata = fs::metadata(path)?;
+    Ok(metadata.modified()?) }
+
+fn update_index(
     index: &Index,
     path_field: schema::Field,
     title_field: schema::Field,
-    data_dir: &str
+    data_dir: &str,
+    index_path: &Path
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    println!("Indexing .org files in the {} directory...",
-	     data_dir);
+    println!("Updating index with .org files in the {} directory...", data_dir);
+
     let mut index_writer = index.writer(50_000_000)?;
     let mut indexed_count = 0;
-    let title_re = Regex::new(
-	r"(?i)^\s*#\+title:\s*(.*)$").unwrap();
-    for entry in WalkDir::new(data_dir)
+    let title_re = Regex::new(r"(?i)^\s*#\+title:\s*(.*)$").unwrap();
+
+    // Get index modification time (if it exists)
+    let index_mtime =
+	match get_modification_time(index_path)
+    { Ok(time) => time,
+      // Default to epoch if we can't get the time
+      Err(_) => SystemTime::UNIX_EPOCH, };
+    for entry in WalkDir::new(data_dir) // walk org files
 	.into_iter().filter_map(Result::ok)
     { let path = entry.path();
-      if path.extension().map_or( // only process org files
-	  false, |ext| ext == "org")
-      { if let Ok(content) = std::fs::read_to_string(path)
-	{ for line in content.lines()
-	  { if let Some(cap) = title_re.captures(line)
-	    { let title = cap[1].trim();
-              println!("Indexing: {} - {}",
-		       path.display(), title);
-              index_writer.add_document(doc!(
-                  path_field => path.to_string_lossy()
-		      .to_string(),
-                  title_field => title.to_string() ) )?;
-              indexed_count += 1;
-              break; } } } } }
-    println!("Indexed {} files. Committing changes...",
-	     indexed_count);
-    index_writer.commit()?;
+      if !path.extension().map_or( // skip non-org files
+	  false, |ext| ext == "org") {
+          continue; }
+      if path.starts_with(index_path) {
+	  continue; } // Don't traverse inside the index
+
+      let file_mtime = match get_modification_time(path) {
+          Ok(mtime) => mtime,
+          Err(_) => continue, // Skip files we can't get modification time for
+      };
+
+      if file_mtime <= index_mtime {
+	  // Skip files older than the index
+          println!("Skipping unchanged file: {}",
+		   path.display());
+          continue; }
+
+      // Process file
+      if let Ok(content) = std::fs::read_to_string(path)
+      { for line in content.lines()
+        { if let Some(cap) = title_re.captures(line)
+          { let title = cap[1].trim();
+            println!("Indexing: {} - {}",
+		     path.display(), title);
+
+            // Delete existing documents
+	    // with this path from the index
+            let path_str = path.to_string_lossy()
+	    .to_string();
+            let term = tantivy::Term::from_field_text(
+		path_field, &path_str);
+            index_writer.delete_term(term);
+
+            index_writer.add_document(doc!(
+                path_field => path_str,
+                title_field => title.to_string()
+            ))?;
+
+            indexed_count += 1;
+            break; } } } }
+
+    if indexed_count > 0
+    { println!("Indexed {} files. Committing changes...",
+	       indexed_count);
+      index_writer.commit()?;
+    } else {
+        println!("No new or modified files found."); }
     Ok(indexed_count) }
 
 fn search_index(
