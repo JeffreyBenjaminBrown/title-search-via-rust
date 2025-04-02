@@ -1,12 +1,18 @@
 [package]
-name = "search_via_tantivy"
+name = "title-search"
 edition = "2021"
 version = "0.1.0"
 
 [dependencies]
-walkdir = "2"
-regex = "1.11.1"
+tantivy = "0.19.0"
+walkdir = "2.4"
+regex = "1"
+zstd = "0.13"
 
-[[bin]] # more bin sections can be added
-name = "main"
-path = "main.rs"
+[[bin]]
+name = "no-dependencies"
+path = "no-dependencies/main.rs"
+
+[[bin]]
+name = "via-tantivy"
+path = "via-tantivy/main.rs"
