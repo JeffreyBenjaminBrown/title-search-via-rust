@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Index
+    // Define the schema
     let mut schema_builder = schema::Schema::builder();
     let path_field = schema_builder.add_text_field(
         "path", schema::STRING | schema::STORED);
