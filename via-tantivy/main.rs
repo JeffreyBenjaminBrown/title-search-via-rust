@@ -5,9 +5,30 @@ use walkdir::WalkDir;
 use regex::Regex;
 use std::fs;
 
+fn search_index(
+    index: &Index,
+    title_field: schema::Field,
+    query_text: &str
+) -> Result< (Vec<(f32, tantivy::DocAddress)>,
+	      tantivy::Searcher),
+	    Box<dyn std::error::Error>> {
+    println!("\nFinding files with titles matching \"{}\".",
+	     query_text);
+    let reader = index.reader()?;
+    let searcher = reader.searcher();
+    let query_parser =
+	tantivy::query::QueryParser::for_index(
+        &index, vec![title_field]);
+    let query = query_parser.parse_query(query_text)?;
+    let best_matches = searcher.search(
+        &query, &TopDocs::with_limit(10))?;
+
+    Ok((best_matches, searcher))
+}
+
 fn print_search_results(
-    best_matches: Vec<( f32, // vector of float-address pairs
-		    tantivy::DocAddress)>,
+    best_matches: Vec< // vector of float-address pairs
+	    (f32, tantivy::DocAddress)>,
     searcher: &tantivy::Searcher,
     path_field: schema::Field,
     title_field: schema::Field
@@ -77,18 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	     indexed_count);
     index_writer.commit()?;
 
-    // Search the index.
-    let query_text = "test second";
-    println!("\nFinding files with titles matching \"{}\".",
-	     query_text);
-    let reader = index.reader()?;
-    let searcher = reader.searcher();
-    let query_parser =
-	tantivy::query::QueryParser::for_index(
-	&index, vec![title_field]);
-    let query = query_parser.parse_query(query_text)?;
-    let best_matches = searcher.search(
-	&query, &TopDocs::with_limit(10))?;
+    let (best_matches, searcher) = search_index(
+	&index, title_field, "test second")?;
 
     print_search_results( best_matches, &searcher,
 			  path_field, title_field)?;
