@@ -5,6 +5,27 @@ use walkdir::WalkDir;
 use regex::Regex;
 use std::fs;
 
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Index
+    let mut schema_builder = schema::Schema::builder();
+    let path_field = schema_builder.add_text_field(
+        "path", schema::STRING | schema::STORED);
+    let title_field = schema_builder.add_text_field(
+        "title", schema::TEXT | schema::STORED);
+    let schema = schema_builder.build();
+    let index = // Later, `build_index` populates this.
+	empty_temp_index( schema.clone(),
+			  "tantivy_org_index")?;
+    build_index(
+	&index, path_field, title_field, "data")?;
+
+    // Search
+    let (best_matches, searcher) = search_index(
+	&index, title_field, "test second")?;
+    print_search_results( best_matches, &searcher,
+			  path_field, title_field)?;
+    Ok (()) }
+
 fn empty_temp_index(
     // Makes an empty index in a temporary directory.
     schema: schema::Schema,
@@ -96,25 +117,4 @@ fn print_search_results(
                 .unwrap().as_text().unwrap();
             println!("- Score: {:.2} | {} ({})",
                      score, path_value, title_value); } }
-    Ok (()) }
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Index
-    let mut schema_builder = schema::Schema::builder();
-    let path_field = schema_builder.add_text_field(
-        "path", schema::STRING | schema::STORED);
-    let title_field = schema_builder.add_text_field(
-        "title", schema::TEXT | schema::STORED);
-    let schema = schema_builder.build();
-    let index = // Later, `build_index` populates this.
-	empty_temp_index( schema.clone(),
-			  "tantivy_org_index")?;
-    build_index(
-	&index, path_field, title_field, "data")?;
-
-    // Search
-    let (best_matches, searcher) = search_index(
-	&index, title_field, "test second")?;
-    print_search_results( best_matches, &searcher,
-			  path_field, title_field)?;
     Ok (()) }
