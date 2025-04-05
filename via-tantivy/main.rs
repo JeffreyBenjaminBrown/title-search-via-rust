@@ -63,16 +63,38 @@ fn needs_indexing( // based on modification time
                      // assume it needs indexing.
     } }
 
-fn extract_org_title(
-    path: &Path )
-    -> Option<String>
-{ let title_re = Regex::new(
-    r"(?i)^\s*#\+title:\s*(.*)$").unwrap();
-  if let Ok(content) = fs::read_to_string(path)
-  { for line in content.lines()
-    { if let Some(cap) = title_re.captures(line)
-      { return Some(cap[1].trim().to_string()); } } }
-  None }
+fn extract_org_title(path: &Path) -> Option<String> {
+    let title_re = Regex::new(r"(?i)^\s*#\+title:\s*(.*)$").unwrap();
+
+    if let Ok(content) = fs::read_to_string(path) {
+        for line in content.lines() {
+            if let Some(cap) = title_re.captures(line) {
+                let raw_title = cap[1].trim().to_string();
+                return Some(strip_org_links(&raw_title)); } } }
+    None }
+
+// Titles can include links,
+// but can be searched for as if each link
+// was equal to its label.
+// That is, the ID and brackets of a link in a title are not indexed.
+fn strip_org_links(text: &str) -> String {
+    let link_re = Regex::new(
+	r"\[\[.*?\]\[(.*?)\]\]").unwrap();
+    let mut result = String::from(text);
+    let mut offset = 0; // This is offset in `text` -- that is, in the input string, not the output
+    for cap in link_re.captures_iter(text) {
+        let whole_match = cap.get(0).unwrap();
+        let link_label = cap.get(1).unwrap();
+
+        // Define the range to modify
+        let start_pos = whole_match.start() - offset;
+        let end_pos = whole_match.end() - offset;
+
+        result.replace_range(
+	    start_pos .. end_pos,
+	    link_label.as_str());
+        offset += whole_match.len() - link_label.len(); }
+    result }
 
 // Add a single document to the index
 fn index_document(
