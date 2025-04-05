@@ -1,7 +1,5 @@
 exit # This is not a script, just snippets.
 
-CONTAINER_NAME=title-search
-
 docker exec -it $CONTAINER_NAME bash
 docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME
 
@@ -15,6 +13,7 @@ docker tag jeffreybbrown/hode:new jeffreybbrown/hode:latest
 docker tag jeffreybbrown/hode:new jeffreybbrown/hode:$DOCKER_IMAGE_SUFFIX
 docker rmi jeffreybbrown/hode:new
 
+CONTAINER_NAME=title-search2
 NATIVE=/home/jeff/hodal/connection-demos/title-search
 docker run --name $CONTAINER_NAME -it -d \
   -v $NATIVE:/home/ubuntu                \
